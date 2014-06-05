@@ -21,6 +21,7 @@
  * MANIPULATION - Insertion/Removal
  *   - .after([html|element|Selection])
  *   - .append([html|element|Selection])
+ *   - .appendTo([html|element|Selection])
  *   - .before([html|element|Selection])
  *   - .html([html])
  *   - .prepend([html|element|Selection])
@@ -54,7 +55,7 @@ var $ = (function() {
 			chars.push(c);
 		}
 		return chars.join('');
-	}();
+	}
 
 	// the onready function
 	var callOnLoad = [];
@@ -78,6 +79,8 @@ var $ = (function() {
 			var elements = elements;
 		} else if (elements.nodeType) {
 			var elements = [elements];
+		} else if (elements instanceof Selection) {
+			return elements;
 		} else {
 			throw "Illegal argument for Selection: " + elements;
 		}
@@ -138,13 +141,17 @@ var $ = (function() {
 	 * Fill the content
 	 * @param  {String} url
 	 * @param  {Object} data
+	 * @param  {Function} callback
 	 * @return {Selection}	The current selection
 	 */
-	Selection.prototype.load = function(url, data) {
+	Selection.prototype.load = function(url, data, callback) {
 		var elements = this.toArray();
 		_$.get(url, data, (function(responseData) {
 			for (var i = 0; i < elements.length; i++) {
 				elements[i].innerHTML = responseData;
+			}
+			if (callback) {
+				callback(responseData);
 			}
 		}));
 		return this;
@@ -221,8 +228,8 @@ var $ = (function() {
 	};
 
 	/**
-	 * Return a selection containing all the children of all the elements in the
-	 * current selection that match the selection filter.
+	 * Return a selection containing all the children of all the elements in
+	 * the current selection that match the selection filter.
 	 * @param  {String} filter
 	 *         Optional css selector query
 	 * @return {Selection}	contains all matched children
@@ -318,6 +325,7 @@ var $ = (function() {
 		} else {
 			return this.trigger('click');
 		}
+		return this;
 	};
 
 
@@ -333,12 +341,14 @@ var $ = (function() {
 	 * @return {Selection}	The current selection.
 	 */
 	Selection.prototype.addClass = function(className) {
-		var names = (className instanceof Array) ? className : className.split(/\s+/);
+		var names = (className instanceof Array) ?
+			className : className.split(/\s+/);
 		for (var i = 0; i < this.length; i++) {
 			for (var j = 0; j < names.length; j++) {
 				this[i].classList.add(names[j]);
 			}
 		}
+		return this;
 	};
 
 	/**
@@ -385,7 +395,7 @@ var $ = (function() {
 		if (this[0]) {
 			if (html !== undefined) {
 				for (var i = 0; i < this.length; i++) {
-					this[i].innterHTML = html;
+					this[i].innerHTML = html;
 					return this;
 				}
 			} else {
@@ -468,6 +478,7 @@ var $ = (function() {
 				e.style.display = 'none';
 			}
 		}
+		return this;
 	};
 
 	/**
@@ -485,6 +496,7 @@ var $ = (function() {
 				}
 			}
 		}
+		return this;
 	};
 
 
@@ -515,6 +527,17 @@ var $ = (function() {
 	};
 
 	/**
+	 * Prepend this content to another selection.
+	 * @param  {String|Selection|Element} other
+	 * @return {Selection} current selection
+	 */
+	Selection.prototype.prependTo = function(other) {
+		other = other instanceof Selection ? other : new Selection(other);
+		other.prepend(this);
+		return this;
+	};
+
+	/**
 	 * Add content at the end of each element.
 	 * @param  {String|Selection|Element} toAdd [description]
 	 */
@@ -532,6 +555,16 @@ var $ = (function() {
 				}
 			}
 		}
+		return this;
+	};
+
+	/**
+	 * Add this selection to another selection.
+	 * @param  {String|Selection|Element} other
+	 */
+	Selection.prototype.appendTo = function(other) {
+		other = other instanceof Selection ? other : new Selection(other);
+		other.append(this);
 		return this;
 	};
 
@@ -588,7 +621,8 @@ var $ = (function() {
 			var e = this[i].parentNode;
 			if (e) {
 				for (var j = nodes.length - 1; j >= 0; j--) {
-					e.insertBefore(nodes[j].cloneNode(true), this[i].nextSibling);
+					e.insertBefore(nodes[j].cloneNode(true),
+						this[i].nextSibling);
 				}
 			}
 		}
@@ -602,6 +636,7 @@ var $ = (function() {
 		for (var i = 0; i < this.length; i++) {
 			this[i].parentNode.removeChild(this[i]);
 		}
+		return this;
 	};
 
 	/**
@@ -614,8 +649,32 @@ var $ = (function() {
 				e.removeChild(e.firstChild);
 			}
 		}
+		return this;
 	};
 
+	////////////////
+	// ANIMATION //
+	////////////////
+
+	Selection.prototype.fadeIn = function() {
+		this.each(function(e) {
+			var oldOpacity = e.style.opacity;
+			var startTime = Date.now();
+			var endTime = startTime = 1000;
+			e.style.opacity = 0;
+
+			var f = function() {
+				var now = Date.now();
+				e.style.opacity = Math.min((now - startTime) / (endTime - startTime), 1.0);
+				if (now < endTime) {
+					setTimeout(f, 10);
+				}
+			}
+
+		});
+
+		return this;
+	}
 
 	//////////////////////
 	// HELPER FUNCTIONS //
@@ -633,12 +692,29 @@ var $ = (function() {
 				if (arguments[1]) {
 					for (var attribute in arguments[1]) {
 						if (arguments[1].hasOwnProperty(attribute)) {
-							e[attribute] = arguments[1][attribute];
+							var value = arguments[1][attribute];
+							// custom pseudo attributes
+							if (attribute == 'class') {
+								e.className = value;
+							} else if (attribute == 'html') {
+								e.innerHTML = value;
+							} else if (attribute == 'text') {
+								e.innerText = value;
+							} else if (attribute == 'height') {
+								e.style.height = value + 'px';
+							} else if (attribute == 'width') {
+								e.style.width = value + 'px';
+							}
+							// real DOM attributes
+							else {
+								e[attribute] = value;
+							}
 						}
 					}
 					// TODO: set pseudo attributes
+
 				}
-				return e;
+				return new Selection(e);
 			} else {
 				return new Selection(arg1);
 			}
@@ -667,7 +743,7 @@ var $ = (function() {
 					encodeURIComponent(parameters[prop]));
 			}
 		}
-		if (props) {
+		if (props.length) {
 			return (post ? '' : '?') + props.join('&');
 		} else {
 			return "";
@@ -680,8 +756,8 @@ var $ = (function() {
 	 * @param  {Object}   data
 	 * @param  {Function} callback
 	 */
-	_$.get = function(url, data, callback) {
-		return _$.ajax('GET', url, data, callback);
+	_$.get = function(url, data, callback, error) {
+		return _$.ajax('GET', url, data, callback, error);
 	};
 
 	/**
@@ -690,8 +766,8 @@ var $ = (function() {
 	 * @param  {Object}   data
 	 * @param  {Function} callback
 	 */
-	_$.post = function(url, data, callback) {
-		return _$.ajax('POST', url, data, callback);
+	_$.post = function(url, data, callback, error) {
+		return _$.ajax('POST', url, data, callback, error);
 	};
 
 	/**
@@ -700,8 +776,11 @@ var $ = (function() {
 	 * @param  {String}   url
 	 * @param  {Object}   data
 	 * @param  {Function} callback
+	 *         function called when complete
+	 * @param  {Function} error
+	 *         function called when errored
 	 */
-	_$.ajax = function(method, url, data, callback) {
+	_$.ajax = function(method, url, data, callback, error) {
 		var request = new XMLHttpRequest();
 		var dataString = '';
 		if (method == 'GET') {
@@ -709,11 +788,31 @@ var $ = (function() {
 		} else {
 			dataString = _$.params(data, true);
 		}
-		if (callback) {
+		if (callback || error) {
 			request.onreadystatechange = function() {
 				if (request.readyState == 4) {
-					var responseData = request.responseText;
-					callback(responseData);
+					if (request.status == 200) {
+						if (callback) {
+							var responseType = request.getResponseHeader('content-type');
+							responseType = responseType ? responseType.toLowerCase() : '';
+							var responseData;
+							if (responseType.indexOf('text/plain') >= 0) {
+								responseData = request.responseText;
+							} else if (responseType.indexOf('text/html') >= 0) {
+								responseData = request.responseText;
+							} else if (responseType.indexOf('xml') >= 0) {
+								responseData = request.responseXML;
+							} else if (responseType.indexOf('application/json') >= 0) {
+								responseData = JSON.parse(request.responseText);
+							} else {
+								responseData = request.responseText;
+							}
+
+							callback(responseData);
+						}
+					} else if (error) {
+						error(request.statusText, request.status, request);
+					}
 				}
 			};
 		}
